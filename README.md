@@ -1,123 +1,86 @@
-# Installing MyPy
+# Basic Django App
 
-I have chofsen to use [MyPy](http://mypy-lang.org/) for this. There is also the option of [Pyre](https://pyre-check.org/). They seem much of a much.
+Because we want to actually have this all running against Django, we are going to setup a basic Django app to try things out
+with.
 
-## Getting MyPy
-This is best done with python3.6 or greater.
+## Setup
+Install Django
 ```
-virtualenv .venv
-. ./.venv/bin/activate
-pip install mypy
+pip install Django>=1.11.0,<2.0
 ```
-From here on in it is assumed that you will be running in the virtualenv.
-This should be enough for you to run mypy.
-```
-mypy --version
-```
-You should see the version show up, which means your good to go.
+> Note, I'm pointing at the LTS Django at the time I wrote this. Change it if you want. Maybe one day there will be good typing 
+> support built in.
 
-## Getting some simple examples going
+I did some things in the django app to get it running, so you should be able to see that now. A simple app with a single page that loads
+a gif from an endpoint that changes each time the page reloads.
 
-Create a file, step01.py, in the src folder. Include the following code (borrowed from MyPy website)
+## Run MyPy Over It
+Now lets try running mypy over this code and see what happens. Run this from the parent folder.
+```
+mypy typing_tutorial/
+```
+You should get a bunch of errors here about no stubs, something like
+```
+typing_training/cat_gifs/admin.py:1: error: No library stub file for module 'django.contrib'
+typing_training/cat_gifs/admin.py:1: note: (Stub files are from https://github.com/python/typeshed)
+typing_training/cat_gifs/apps.py:1: error: No library stub file for module 'django.apps'
+typing_training/cat_gifs/models.py:1: error: No library stub file for module 'django.db'
+typing_training/cat_gifs/tests.py:1: error: No library stub file for module 'django.test'
+typing_training/cat_gifs/views.py:1: error: No library stub file for module 'django.views.generic'
+typing_training/typing_training/urls.py:16: error: No library stub file for module 'django.conf.urls'
+typing_training/typing_training/urls.py:17: error: No library stub file for module 'django.contrib'
+typing_training/typing_training/wsgi.py:12: error: No library stub file for module 'django.core.wsgi'
+typing_training/manage.py:8: error: No library stub file for module 'django.core.management'
+typing_training/manage.py:14: error: No library stub file for module 'django'
+typing_training/typing_training/settings.py:28: error: Need type annotation for variable
+```
+This is telling us that mypy doesn't know how to type check these modules. Django doesn't have type hints built in yet, so this makes a bit of sense.
+But we want to actually do type checking in a django and not be told its all crap. So lets look at what we can do.
+
+## Ignore Things
+So the simple thing that we can do is ignore imports that do not have typing. If you run mypy as follows you will no longer see a bunch of those errors
+```
+mypy typing_training --ignore-missing-imports
+```
+This will leave you with very few errors, possibly none, that are things that are under your control. Then you can go ahead and start typing your code.
+
+## Django Stubs
+Though the core project is not typed yet, there is an attempt that someone has made to create type stubs for Django. Type stubs are seperate files that
+define typing information for python files. So can we use these to help us with typing our code?
+
+First, lets get the stubs and get them running
+```
+git clone git@github.com:suutari/mypy-django.git stubs
+```
+Now if you run the following command, you should see no errors again. What do?
+```
+mypy typing_training --ignore-missing-imports --strict-optional
+```
+Now we are actually using a bunch of typing on Django provided by the nice ppl of the internet. Yay! This wont work for parts of django-rest-framework,
+but should cover some of the things that we care about.
+
+## Typing Things in Django
+So lets look at actually typing something in Django. Currently there is a simple view in cat_gifs/views. We are going to make that better by typing it.
+I wouldn't actually recommend this in the real world, because you don't need to define these methods, but hey, tutorials.
+
+Make the CatGifsView look like this
 ```python
-def fib(n):
-    a, b = 0, 1
-    while a < n:
-        yield a
-        a, b = b, a + b
+class CatGifView(TemplateView):
+    template_name = "gifs.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update({
+            "title": "Jims Finest Cat Gifs"
+        })
+        return context
+
+    def get(self, request: str, *args, **kwargs) -> http.HttpResponse:
+        context = self.get_context_data(**kwargs)
+        return self.render_to_response(context=context)
 ```
-Save it, and lets see if we can run mypy over it.
-
+This doesn't do much, but if you run mypy now you will get a new error
 ```
-mypy src/step01.py
+typing_training/cat_gifs/views.py:16: error: Argument 1 of "get" incompatible with supertype "TemplateView"
 ```
-And it runs, and nothing happens. Oh well, lets actually add some typing stuff.
-
-```python
-from typing import Iterator
-
-def fib(n: Int) -> Iterator[int]:
-    a, b = 0, 1
-    while a < n:
-        yield a
-        a, b = b, a + b
-```
-Run mypy again, and still nothing seems to happen. Lets do something silly with it. Add the following to the bottom of the step01.py
-
-```python
-fib(1)  # Good
-fib(1.0)  # Float is bad
-fib("this wont work")  # String is also bad
-```
-Once more to mypy. You should get a couple of errors now.
-```
-src/step01.py:12: error: Argument 1 to "fib" has incompatible type "float"; expected "int"
-src/step01.py:13: error: Argument 1 to "fib" has incompatible type "str"; expected "int"
-```
-
-So this is the basics of getting typing working with python. Useful, but there is more that we want to do.
-
-Lets try a couple of other things.
-Add the following to step01.py
-```python
-from typing import Iterator, List
-
-
-def convert_string(string: str) -> str:
-    if string:
-        return string * 5
-
-
-def load_file(file_name: str) -> List[str]:
-    results = []
-    with open(file_name) as f:
-        for line in f.readlines():
-            results.append(convert_string(string=line))
-    return results
-
-
-results = load_file('lines.txt')
-```
-If you run mypy now, you will get a useful error
-```
-src/step01.py:11: error: Missing return statement
-```
-This is telling us that our code doesn't actually meet its contract. There are situations that don't return a string. So lets fix that.
-Update step01.py to be like this
-```python
-def convert_string(string: str) -> str:
-    if string:
-        return string * 5
-    return ''
-```
-But what if we don't want to return a string in this case? We could do something like the following
-```python
-from typing import Iterator, List, Optional
-
-
-def convert_string(string: str) -> Optional[str]:
-    if string:
-        return string * 5
-    return None
-```
-```
-src/step01.py:22: error: Incompatible return value type (got "List[Optional[str]]", expected "List[str]")
-```
-This tells mypy that the return can be potentially a string or None. This fixes our initial issue, but makes new ones. Because our
-contract changed, there are flow on effects where those that are expecting the result to be of a particular type need to be updated
-to handle that change.
-
-```python
-def load_file(file_name: str) -> List[str]:
-    results = []
-    with open(file_name) as f:
-        for line in f.readlines():
-            string = convert_string(string=line)
-            if string is not None:
-                results.append(string)
-    return results
-```
-We now handle the none case, and everyone is happy. But this shows why the typing stuff can be really helpful.
-
-Next up, we are going to look at getting this to run with Django, because that is of value to us. But first, for more details on actually
-using this stuff in the real world, see this [talk by Carl Meyer](https://www.youtube.com/watch?v=pMgmKJyWKn8). Its a good, quick, talk about some of the things that you can do with typing.
+Basically, request shouldn't be a string, because that will break prior contracts that we have established. So this is helping me find bad things in code.
